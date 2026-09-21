@@ -84,7 +84,7 @@ def main():
         bf16=False,                                 # <--- DISABLE bf16
         report_to="none",                            
         dataset_text_field="text",                  
-        max_seq_length=config["max_seq_length"]     
+        max_length=config["max_seq_length"]     
     )
 
     # 5. Initialize SFTTrainer
