@@ -25,9 +25,9 @@ def load_model_and_tokenizer(
         print("Initializing 4-bit BitsAndBytes config for QLoRA...")
         quantization_config = BitsAndBytesConfig(
             load_in_4bit=True,
-            bnb_4bit_quant_type="nf4",           # Optimal for normal-distributed weights
-            bnb_4bit_use_double_quant=True,      # Quantize the quantization constants
-            bnb_4bit_compute_dtype=torch.float16 # Compute happens in 16-bit
+            bnb_4bit_quant_type="nf4",           
+            bnb_4bit_use_double_quant=True,      
+            bnb_4bit_compute_dtype=torch.float16 # <--- MUST MATCH fp16
         )
     else:
         quantization_config = None
