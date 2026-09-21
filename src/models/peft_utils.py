@@ -36,7 +36,8 @@ def load_model_and_tokenizer(
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
         quantization_config=quantization_config,
-        device_map="auto", # Automatically maps model layers to GPU/CPU
+        device_map="auto",
+        torch_dtype=torch.float16, # Automatically maps model layers to GPU/CPU
     )
 
     # If using 4-bit, we must prepare the model (e.g., cast LayerNorms to fp32 for stability)
