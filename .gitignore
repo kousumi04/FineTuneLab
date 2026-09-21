@@ -32,6 +32,12 @@ outputs/
 runs/
 wandb/
 tensorboard/
+*.safetensors
+*.ckpt
+*.pth
+*.pt
+*.bin
+*.onnx
 *.log
 
 # Jupyter and local tooling
