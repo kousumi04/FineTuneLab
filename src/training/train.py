@@ -70,7 +70,7 @@ def main():
         eval_strategy="steps",
         eval_steps=50,
         save_strategy="epoch",
-        fp16=True,                                  
+        fp16=False,                                  
         bf16=False,                                 
         report_to="none",                            
         dataset_text_field="text",                  
