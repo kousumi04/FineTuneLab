@@ -1,0 +1,7 @@
+{
+    "experiment_name": "qlora_r16",
+    "training_time_seconds": 694.4986057281494,
+    "peak_vram_mb": 1367.92431640625,
+    "train_loss": 0.09774583121140798,
+    "lora_r": 16
+}
