@@ -1,0 +1,23 @@
+# Model & Quantization
+model_name: "Qwen/Qwen2.5-0.5B"
+use_4bit: true
+
+# LoRA Parameters
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.05
+target_modules: "all-linear"
+
+# Training Hyperparameters
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 4
+learning_rate: 2.0e-4
+num_train_epochs: 1
+max_seq_length: 512
+
+# Optimizer specific for low VRAM
+optim: "paged_adamw_8bit"
+
+# Outputs
+output_dir: "outputs/adapters/qlora_r16"
+experiment_name: "qlora_r16"
