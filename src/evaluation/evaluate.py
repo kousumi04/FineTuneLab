@@ -1,126 +1,132 @@
+import os
+import ast
 import json
 import torch
-import ast
-import os
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from peft import PeftModel
 
-def extract_corrected_code(generated_text: str) -> str:
-    """Extracts the code snippet appearing after the Corrected Code header."""
-    marker = "Corrected Code:"
-    if marker in generated_text:
-        return generated_text.split(marker)[-1].strip()
-    return ""
+BASE_MODEL_ID = "Qwen/Qwen2.5-0.5B"
+TEST_DATA_PATH = "data/processed/test.jsonl"
+OUTPUT_SUMMARY_PATH = "outputs/metrics/benchmark_summary.json"
 
-def validate_syntax(code_string: str) -> bool:
-    """Uses Python's AST parser to check if the string is valid Python code."""
-    if not code_string:
+def validate_syntax(code_str: str) -> bool:
+    if not code_str.strip():
         return False
     try:
-        ast.parse(code_string)
+        ast.parse(code_str)
         return True
     except SyntaxError:
         return False
 
-def main():
-    base_model_id = "Qwen/Qwen2.5-0.5B"
-    adapter_path = "outputs/adapters/qlora_r16"
-    test_data_path = "data/processed/test.jsonl"
-    report_path = "outputs/metrics/evaluation_report.txt"
-    
-    os.makedirs(os.path.dirname(report_path), exist_ok=True)
-    
-    print("Loading base model and tokenizer...")
-    tokenizer = AutoTokenizer.from_pretrained(base_model_id)
-    
-    # Load base model in fp16
-    model = AutoModelForCausalLM.from_pretrained(
-        base_model_id,
-        torch_dtype=torch.float16,
-        device_map="auto"
-    )
-    
-    print("Injecting trained LoRA adapter...")
-    model = PeftModel.from_pretrained(model, adapter_path)
-    model.eval()
+def extract_corrected_code(response_text: str) -> str:
+    marker = "Corrected Code:"
+    if marker in response_text:
+        return response_text.split(marker)[-1].strip()
+    return ""
 
-    # Load 10% held-out test data
-    with open(test_data_path, "r") as f:
-        test_data = [json.loads(line) for line in f]
-
+def evaluate_model_pipeline(model, tokenizer, test_data):
     total = len(test_data)
-    valid_structure_count = 0
-    valid_syntax_count = 0
-    exact_match_count = 0
+    valid_structure = 0
+    valid_syntax = 0
+    exact_matches = 0
 
-    print(f"Starting evaluation on {total} test examples...")
-    
-    for item in tqdm(test_data, desc="Evaluating"):
-        # Format the prompt exactly as it was during training, stopping at the Response header
+    for item in tqdm(test_data, desc="Running Inference"):
         prompt = (
             f"### Instruction:\n{item['instruction']}\n\n"
             f"### Code:\n{item['input']['code']}\n\n"
             f"### Error:\n{item['input']['error']}\n\n"
             f"### Response:\n"
         )
-        
         inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
-        
         with torch.no_grad():
             outputs = model.generate(
-                **inputs, 
-                max_new_tokens=150, 
+                **inputs,
+                max_new_tokens=150,
                 pad_token_id=tokenizer.eos_token_id,
-                temperature=0.1 # Low temperature for deterministic code generation
+                temperature=0.1
             )
-            
-        # Decode and isolate the model's actual answer
-        generated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
-        response_only = generated_text.replace(prompt, "").strip()
-        
-        # Metric 1: Structural Integrity
-        has_cause = "Cause:" in response_only
-        has_exp = "Explanation:" in response_only
-        has_fix = "Fix:" in response_only
-        has_code = "Corrected Code:" in response_only
-        
-        if has_cause and has_exp and has_fix and has_code:
-            valid_structure_count += 1
-            
-        # Metric 2: Code Validity
-        extracted_code = extract_corrected_code(response_only)
+        raw_text = tokenizer.decode(outputs[0], skip_special_tokens=True).replace(prompt, "").strip()
+
+        # 1. Structural Correctness
+        if all(k in raw_text for k in ["Cause:", "Explanation:", "Fix:", "Corrected Code:"]):
+            valid_structure += 1
+
+        # 2. Code Validity via AST
+        extracted_code = extract_corrected_code(raw_text)
         if validate_syntax(extracted_code):
-            valid_syntax_count += 1
-            
-        # Metric 3: Exact Target Match
+            valid_syntax += 1
+
+        # 3. Exact Code Match
         target_code = item["output"]["corrected_code"].strip()
         if extracted_code == target_code:
-            exact_match_count += 1
+            exact_matches += 1
 
-    # Calculate final percentages
-    structure_acc = (valid_structure_count / total) * 100
-    syntax_acc = (valid_syntax_count / total) * 100
-    exact_match_acc = (exact_match_count / total) * 100
+    return {
+        "structural_accuracy": round((valid_structure / total) * 100, 2),
+        "code_validity_rate": round((valid_syntax / total) * 100, 2),
+        "exact_match_rate": round((exact_matches / total) * 100, 2)
+    }
 
-    report = f"""FineTuneLab - Evaluation Report
-================================
-Model: Qwen2.5-0.5B + LoRA (r=16)
-Test Examples: {total}
+def main():
+    os.makedirs(os.path.dirname(OUTPUT_SUMMARY_PATH), exist_ok=True)
+    with open(TEST_DATA_PATH, "r") as f:
+        test_data = [json.loads(line) for line in f]
 
-Metrics:
---------
-1. Structural Accuracy: {structure_acc:.2f}%
-2. Code Syntax Validity: {syntax_acc:.2f}%
-3. Code Exact Match: {exact_match_acc:.2f}%
-"""
+    tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_ID)
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    dtype = torch.float16 if torch.cuda.is_available() else torch.float32
 
-    with open(report_path, "w") as f:
-        f.write(report)
-        
-    print("\n✅ Evaluation complete!")
-    print(report)
-    print(f"Report saved to {report_path}")
+    # Load Raw Base Model
+    base_model = AutoModelForCausalLM.from_pretrained(
+        BASE_MODEL_ID,
+        torch_dtype=dtype,
+        device_map=device
+    )
+
+    runs = [
+        {"name": "Base Model (Zero-Shot)", "type": "base", "adapter": None, "train_metric": None},
+        {"name": "LoRA (r=16, FP16)", "type": "lora", "adapter": "outputs/adapters/lora_r16", "train_metric": "outputs/metrics/lora_r16_train_metrics.json"},
+        {"name": "QLoRA (r=16, 4-bit)", "type": "qlora", "adapter": "outputs/adapters/qlora_r16", "train_metric": "outputs/metrics/qlora_r16_train_metrics.json"},
+    ]
+
+    summary_records = []
+
+    for run in runs:
+        print(f"\n--- Evaluating {run['name']} ---")
+        if run["type"] == "base":
+            active_model = base_model
+        else:
+            if not os.path.exists(run["adapter"]):
+                print(f"Skipping {run['name']}; adapter not found at {run['adapter']}")
+                continue
+            active_model = PeftModel.from_pretrained(base_model, run["adapter"])
+
+        active_model.eval()
+        eval_results = evaluate_model_pipeline(active_model, tokenizer, test_data)
+
+        # Pull logged training metrics if available
+        train_stats = {}
+        if run["train_metric"] and os.path.exists(run["train_metric"]):
+            with open(run["train_metric"], "r") as f:
+                train_stats = json.load(f)
+
+        summary_records.append({
+            "Model Arm": run["name"],
+            "Trainable Params": f"{train_stats.get('trainable_params', 0):,} ({train_stats.get('trainable_percent', 0.0)}%)" if run["type"] != "base" else "0 (0.0%)",
+            "Peak VRAM (MB)": train_stats.get("peak_vram_mb", 0.0) if run["type"] != "base" else "N/A",
+            "Training Time (s)": train_stats.get("training_time_seconds", 0.0) if run["type"] != "base" else "N/A",
+            "Adapter Size (MB)": train_stats.get("adapter_size_mb", "N/A"),
+            "Val Loss": train_stats.get("val_loss", "N/A"),
+            "Task Accuracy (%)": eval_results["structural_accuracy"],
+            "Code Validity Rate (%)": eval_results["code_validity_rate"],
+            "Exact Match (%)": eval_results["exact_match_rate"]
+        })
+
+    with open(OUTPUT_SUMMARY_PATH, "w") as f:
+        json.dump(summary_records, f, indent=4)
+
+    print(f"\n✅ All arms evaluated. Summary saved to {OUTPUT_SUMMARY_PATH}")
 
 if __name__ == "__main__":
     main()

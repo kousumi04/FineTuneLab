@@ -1,16 +1,26 @@
 import os
+import sys
 import time
 import yaml
 import json
+import argparse
 import torch
 from datasets import load_dataset
 from trl import SFTTrainer, SFTConfig
 
-import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-
 from src.models.peft_utils import load_model_and_tokenizer, apply_lora
 from src.utils.memory_tracker import get_peak_vram_mb, reset_memory_stats
+
+def get_directory_size_mb(directory_path: str) -> float:
+    """Calculates total disk footprint of saved adapter weights in MB."""
+    total_bytes = 0
+    for dirpath, _, filenames in os.walk(directory_path):
+        for f in filenames:
+            fp = os.path.join(dirpath, f)
+            if not os.path.islink(fp):
+                total_bytes += os.path.getsize(fp)
+    return round(total_bytes / (1024 * 1024), 2)
 
 def format_instruction(example):
     prompt = f"""### Instruction:
@@ -31,14 +41,17 @@ Corrected Code:
     return {"text": prompt}
 
 def main():
-    config_path = "configs/qlora.yaml"
-    with open(config_path, "r") as f:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", type=str, default="configs/qlora.yaml", help="Path to experiment YAML config")
+    args = parser.parse_args()
+
+    with open(args.config, "r") as f:
         config = yaml.safe_load(f)
-        
-    print(f"🚀 Starting Experiment: {config['experiment_name']}")
+
+    print(f"🚀 Starting Experiment: {config['experiment_name']} (4-bit: {config['use_4bit']})")
 
     dataset = load_dataset(
-        "json", 
+        "json",
         data_files={
             "train": "data/processed/train.jsonl",
             "validation": "data/processed/validation.jsonl"
@@ -46,11 +59,13 @@ def main():
     )
     dataset = dataset.map(format_instruction)
 
+    # Load Base Model (Quantized or Full FP16)
     model, tokenizer = load_model_and_tokenizer(
-        model_name=config["model_name"], 
+        model_name=config["model_name"],
         use_4bit=config["use_4bit"]
     )
-    
+
+    # Attach LoRA Adapters
     model = apply_lora(
         model=model,
         r=config["lora_r"],
@@ -59,22 +74,24 @@ def main():
         target_modules=config["target_modules"]
     )
 
+    trainable_params, all_params = model.get_nb_trainable_parameters()
+    trainable_pct = (trainable_params / all_params) * 100
+
     training_args = SFTConfig(
         output_dir=config["output_dir"],
         per_device_train_batch_size=config["per_device_train_batch_size"],
         gradient_accumulation_steps=config["gradient_accumulation_steps"],
         learning_rate=float(config["learning_rate"]),
         num_train_epochs=config["num_train_epochs"],
-        optim="adamw_torch", 
+        optim=config.get("optim", "adamw_torch"),
         logging_steps=10,
-        eval_strategy="steps",
-        eval_steps=50,
+        eval_strategy="epoch",
         save_strategy="epoch",
-        fp16=False,                                  
-        bf16=False,                                 
-        report_to="none",                            
-        dataset_text_field="text",                  
-        max_length=config.get("max_seq_length", 512)     
+        fp16=False,
+        bf16=False,
+        report_to="none",
+        dataset_text_field="text",
+        max_length=config.get("max_seq_length", 512)
     )
 
     trainer = SFTTrainer(
@@ -85,33 +102,42 @@ def main():
         args=training_args,
     )
 
-    print("Starting training loop...")
     reset_memory_stats()
     start_time = time.time()
-    
     train_result = trainer.train()
-    
-    end_time = time.time()
-    peak_vram = get_peak_vram_mb()
-    training_time_seconds = end_time - start_time
+    training_time_seconds = round(time.time() - start_time, 2)
+    peak_vram = round(get_peak_vram_mb(), 2)
 
-    print(f"✅ Training complete in {training_time_seconds:.2f} seconds.")
-    print(f"Peak VRAM used: {peak_vram:.2f} MB")
-    
+    eval_metrics = trainer.evaluate()
+    val_loss = round(eval_metrics.get("eval_loss", 0.0), 4)
+
+    # Save artifact weights
+    os.makedirs(config["output_dir"], exist_ok=True)
     trainer.model.save_pretrained(config["output_dir"])
     tokenizer.save_pretrained(config["output_dir"])
-    
-    os.makedirs("outputs/metrics", exist_ok=True)
-    metrics = {
+
+    adapter_size_mb = get_directory_size_mb(config["output_dir"])
+
+    metrics_payload = {
         "experiment_name": config["experiment_name"],
-        "training_time_seconds": training_time_seconds,
+        "arm_type": "LoRA" if not config["use_4bit"] else "QLoRA",
+        "lora_r": config["lora_r"],
+        "trainable_params": trainable_params,
+        "all_params": all_params,
+        "trainable_percent": round(trainable_pct, 4),
         "peak_vram_mb": peak_vram,
-        "train_loss": train_result.metrics.get("train_loss"),
-        "lora_r": config["lora_r"]
+        "training_time_seconds": training_time_seconds,
+        "adapter_size_mb": adapter_size_mb,
+        "final_train_loss": round(train_result.metrics.get("train_loss", 0.0), 4),
+        "val_loss": val_loss
     }
-    
-    with open(f"outputs/metrics/{config['experiment_name']}_metrics.json", "w") as f:
-        json.dump(metrics, f, indent=4)
+
+    os.makedirs("outputs/metrics", exist_ok=True)
+    metrics_path = f"outputs/metrics/{config['experiment_name']}_train_metrics.json"
+    with open(metrics_path, "w") as f:
+        json.dump(metrics_payload, f, indent=4)
+
+    print(f"✅ Run finished. Metrics logged to {metrics_path}")
 
 if __name__ == "__main__":
     main()
