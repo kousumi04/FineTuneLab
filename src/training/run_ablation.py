@@ -4,6 +4,7 @@ import json
 import time
 import torch
 import ast
+import gc  # <--- Added garbage collector
 from datasets import load_dataset
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from peft import PeftModel
@@ -13,7 +14,8 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 from src.models.peft_utils import load_model_and_tokenizer, apply_lora
 from src.utils.memory_tracker import get_peak_vram_mb, reset_memory_stats
 
-RANKS = [4, 8, 16, 32]
+# ONLY RUN THE REMAINING RANKS
+RANKS = [16, 32] 
 ABLATION_METRICS_PATH = "outputs/metrics/ablation_ranks.json"
 TEST_DATA_PATH = "data/processed/test.jsonl"
 
@@ -33,6 +35,10 @@ def quick_eval(model, tokenizer, test_data):
         resp = tokenizer.decode(out[0], skip_special_tokens=True).replace(prompt, "").strip()
         if all(k in resp for k in ["Cause:", "Explanation:", "Fix:", "Corrected Code:"]):
             valid_structure += 1
+            
+        # Manually delete inference tensors
+        del inputs, out
+        
     return round((valid_structure / total) * 100, 2)
 
 def main():
@@ -40,7 +46,14 @@ def main():
     with open(TEST_DATA_PATH, "r") as f:
         test_data = [json.loads(l) for l in f]
 
+    # Load existing records so we don't overwrite Rank 4 and 8!
     ablation_records = []
+    if os.path.exists(ABLATION_METRICS_PATH):
+        with open(ABLATION_METRICS_PATH, "r") as f:
+            try:
+                ablation_records = json.load(f)
+            except json.JSONDecodeError:
+                pass
 
     for r in RANKS:
         alpha = r * 2
@@ -98,13 +111,15 @@ def main():
             "task_accuracy": task_acc
         })
 
-        # Free PyTorch memory between iterations
-        del model, trainer
-        torch.cuda.empty_cache()
+        # Save after EVERY rank just in case it crashes again
+        os.makedirs(os.path.dirname(ABLATION_METRICS_PATH), exist_ok=True)
+        with open(ABLATION_METRICS_PATH, "w") as f:
+            json.dump(ablation_records, f, indent=4)
 
-    os.makedirs(os.path.dirname(ABLATION_METRICS_PATH), exist_ok=True)
-    with open(ABLATION_METRICS_PATH, "w") as f:
-        json.dump(ablation_records, f, indent=4)
+        # Force aggressive garbage collection before emptying cache
+        del model, trainer
+        gc.collect()
+        torch.cuda.empty_cache()
 
     print(f"\n✅ Rank ablation complete. Results saved to {ABLATION_METRICS_PATH}")
 
