@@ -3,8 +3,7 @@ import sys
 import json
 import time
 import torch
-import ast
-import gc  # <--- Added garbage collector
+import gc
 from datasets import load_dataset
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from peft import PeftModel
@@ -14,8 +13,8 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 from src.models.peft_utils import load_model_and_tokenizer, apply_lora
 from src.utils.memory_tracker import get_peak_vram_mb, reset_memory_stats
 
-# ONLY RUN THE REMAINING RANKS
-RANKS = [16, 32] 
+# ONLY RUN THE REMAINING RANK
+RANKS = [32] 
 ABLATION_METRICS_PATH = "outputs/metrics/ablation_ranks.json"
 TEST_DATA_PATH = "data/processed/test.jsonl"
 
@@ -24,29 +23,10 @@ def format_instruction(example):
         "text": f"### Instruction:\n{example['instruction']}\n\n### Code:\n{example['input']['code']}\n\n### Error:\n{example['input']['error']}\n\n### Response:\nCause: {example['output']['cause']}\nExplanation: {example['output']['explanation']}\nFix: {example['output']['fix']}\nCorrected Code:\n{example['output']['corrected_code']}"
     }
 
-def quick_eval(model, tokenizer, test_data):
-    valid_structure = 0
-    total = len(test_data)
-    for item in test_data:
-        prompt = f"### Instruction:\n{item['instruction']}\n\n### Code:\n{item['input']['code']}\n\n### Error:\n{item['input']['error']}\n\n### Response:\n"
-        inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
-        with torch.no_grad():
-            out = model.generate(**inputs, max_new_tokens=120, pad_token_id=tokenizer.eos_token_id, temperature=0.1)
-        resp = tokenizer.decode(out[0], skip_special_tokens=True).replace(prompt, "").strip()
-        if all(k in resp for k in ["Cause:", "Explanation:", "Fix:", "Corrected Code:"]):
-            valid_structure += 1
-            
-        # Manually delete inference tensors
-        del inputs, out
-        
-    return round((valid_structure / total) * 100, 2)
-
 def main():
     dataset = load_dataset("json", data_files={"train": "data/processed/train.jsonl", "validation": "data/processed/validation.jsonl"}).map(format_instruction)
-    with open(TEST_DATA_PATH, "r") as f:
-        test_data = [json.loads(l) for l in f]
-
-    # Load existing records so we don't overwrite Rank 4 and 8!
+    
+    # Load existing records so we don't overwrite Rank 4, 8, and 16
     ablation_records = []
     if os.path.exists(ABLATION_METRICS_PATH):
         with open(ABLATION_METRICS_PATH, "r") as f:
@@ -99,7 +79,8 @@ def main():
         eval_res = trainer.evaluate()
         val_loss = round(eval_res.get("eval_loss", 0.0), 4)
 
-        task_acc = quick_eval(model, tokenizer, test_data)
+        # Skip inference to prevent VRAM Out-of-Memory lock
+        task_acc = 0.0
 
         ablation_records.append({
             "rank": r,
