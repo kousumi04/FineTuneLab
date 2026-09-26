@@ -50,7 +50,7 @@ FineTuneLab/
 **1. Clone the repository**
 
 ```bash
-git clone https://github.com/RitamPolley/FineTuneLab.git
+git clone https://github.com/kousumi04/FineTuneLab.git
 cd FineTuneLab
 
 ```
