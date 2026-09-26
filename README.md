@@ -1,15 +1,82 @@
-## Technical Architecture & Empirical Findings
+# 🔬 FineTuneLab: Quantifiable Parameter-Efficient Fine-Tuning
 
-### Core Questions Answered
+An end-to-end machine learning pipeline and interactive Streamlit dashboard designed to quantify the trade-offs between Zero-Shot inference, Plain LoRA (FP16), and QLoRA (4-bit) fine-tuning.
 
-* **Why not full fine-tuning?**
-  Full fine-tuning requires updating all 502M parameters and maintaining 32-bit optimizer states for every weight, demanding $>6\text{ GB}$ VRAM for training alone on a 0.5B model. LoRA freezes the base weights and injects low-rank decomposition matrices ($8.7\text{M}$ trainable parameters, or $1.75\%$ of total weights), reducing backpropagation memory footprint by over $65\%$ while producing zero catastrophic forgetting on base capabilities (proven by parameter logs in `outputs/metrics/benchmark_summary.json`).
+Built around the `Qwen/Qwen2.5-0.5B` architecture, this project benchmarks Parameter-Efficient Fine-Tuning (PEFT) techniques specifically on the task of Python error diagnosis, analyzing structural adherence, code validity, and hardware resource consumption.
 
-* **What does LoRA rank control, and what happens as it increases?**
-  LoRA rank ($r$) constrains the inner dimension of the update matrices $\Delta W = B \cdot A$ ($B \in \mathbb{R}^{d \times r}, A \in \mathbb{R}^{r \times k}$), dictating the degrees of freedom available to model the task-specific parameter delta. Increasing $r$ from 4 to 32 quadruples trainable parameter count linearly without an equivalent jump in task performance; our deterministic error-debugging task saturates by $r=8$, demonstrating that domain-specific format adherence and code correction occupy an intrinsically low-dimensional subspace (proven by ablation figures in `outputs/metrics/ablation_ranks.json`).
+## 🚀 Key Features
 
-* **Why is QLoRA more memory-efficient than LoRA?**
-  QLoRA compresses frozen base model weights from 16-bit to NormalFloat4 (NF4), an information-theoretically optimal quantile quantization for normal distributions. It combines this with Double Quantization (quantizing the quantization constants themselves, saving $\approx 0.37$ bits per parameter) and Paged Optimizers (managing memory spikes via CPU-GPU page transfers), dropping base weight VRAM overhead to under $600\text{ MB}$ (implemented in `src/models/peft_utils.py` and benchmarked in `outputs/metrics/benchmark_summary.json`).
+* **Interactive Multi-Arm Inference:** A side-by-side testing playground that dynamically routes prompts to a Zero-Shot base model, a Plain LoRA adapter, and a QLoRA adapter, allowing for real-time qualitative comparison of hallucinations and structural generation.
+* **Isolated State Management:** Implements dynamic PEFT adapter injection and strict `.unload()` garbage collection to prevent PyTorch shared model in-memory leaks during concurrent Streamlit generations.
+* **Empirical Hardware Benchmarking:** Automated tracking of Peak VRAM (MB), training duration, adapter disk footprint, and exact-match syntax validation utilizing Python's `ast` parser.
+* **LoRA Rank Ablation Analysis:** Comprehensive ablation study mapping the scaling laws of adapter rank ($r \in \{4, 8, 16, 32\}$) against trainable parameter count and validation loss convergence.
 
-* **Does QLoRA always produce equal quality to LoRA?**
-  No, but within our domain-specific task, QLoRA achieved parity ($100\%$ structural accuracy and $100\%$ AST code validity rate on the held-out test split, matching unquantized LoRA within $<0.03$ validation loss deviation). When the target domain relies on low-entropy, deterministic syntax formatting rather than subtle semantic nuances, 4-bit base quantization incurs negligible task degradation while yielding a significant reduction in training memory footprint (verified via `outputs/metrics/benchmark_summary.json`).
+## 📊 Benchmark Highlights
+
+* **Memory Efficiency:** QLoRA (4-bit) reduced Peak VRAM consumption by >60% compared to Plain LoRA (FP16) during the training phase, while maintaining identical structural accuracy and valid AST parsing rates.
+* **Rank Ablation Insight:** Trainable parameter counts scale linearly with rank ($r$). However, because the adapter weight matrices ($\Delta W = B \cdot A$, where $B \in \mathbb{R}^{d \times r}$ and $A \in \mathbb{R}^{r \times k}$) account for under 2% of the frozen base parameter count, peak training VRAM remains dominated by base model activation memory and KV-caching. Task accuracy converges rapidly once $r \ge 8$.
+* **Format Adherence:** Both LoRA and QLoRA successfully learned the strict target schema (`Cause:`, `Explanation:`, `Fix:`, `Corrected Code:`) via causal language modeling, whereas the Base Model reverted to unstructured conversational prose.
+
+## 📁 Repository Structure
+
+```text
+FineTuneLab/
+├── configs/
+│   ├── base.yaml
+│   ├── lora.yaml
+│   └── qlora_r16.yaml
+├── data/
+│   └── train_test_split/
+├── outputs/
+│   ├── adapters/
+│   │   ├── lora_r16/
+│   │   └── qlora_r16/
+│   └── metrics/
+│       ├── ablation_ranks.json
+│       └── benchmark_summary.json
+├── src/
+│   ├── evaluation/
+│   │   └── evaluate.py
+│   ├── training/
+│   │   └── run_ablation.py
+│   └── utils/
+├── app.py
+└── requirements.txt
+
+```
+
+## 🛠️ Installation & Setup
+
+**1. Clone the repository**
+
+```bash
+git clone https://github.com/RitamPolley/FineTuneLab.git
+cd FineTuneLab
+
+```
+
+**2. Create a virtual environment and install dependencies**
+
+```bash
+python -m venv venv
+source venv/bin/activate  # On Windows use: venv\Scripts\activate
+pip install -r requirements.txt
+
+```
+
+**3. Launch the Dashboard**
+
+```bash
+streamlit run app.py
+
+```
+
+*Note: Inference executes dynamically. A CUDA-enabled GPU is recommended, but the dashboard automatically falls back to CPU execution (`torch.float32`) for adapter inference if no GPU is detected.*
+
+## ⚙️ Tech Stack
+
+* **Modeling & Fine-Tuning:** PyTorch, Hugging Face `transformers`, `peft`, `trl`, `bitsandbytes`
+* **Data Processing:** `datasets`, `pandas`
+* **Frontend:** Streamlit, Altair
+
+---
