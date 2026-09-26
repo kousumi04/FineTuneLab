@@ -77,7 +77,7 @@ with tab_inference:
             options=list(ADAPTER_PATHS.keys()),
             default=["Base Model (Zero-Shot)", "QLoRA (r=16, 4-bit)"]
         )
-        run_btn = st.button("🚀 Run Diagnosis", type="primary", use_container_width=True)
+        run_btn = st.button("🚀 Run Diagnosis", type="primary", width="stretch")
 
     if run_btn and selected_arms:
         tokenizer, base_model = get_base_pipeline()
@@ -102,7 +102,7 @@ with tab_inference:
                             peft_m.eval()
                             with torch.no_grad():
                                 out = peft_m.generate(**inputs, max_new_tokens=140, pad_token_id=tokenizer.eos_token_id, temperature=0.1)
-                            del peft_m
+                            base_model = peft_m.unload()
                         else:
                             st.error(f"Missing weights: `{adapter_path}`")
                             continue
@@ -124,7 +124,8 @@ with tab_metrics:
         with open(BENCHMARK_PATH, "r") as f:
             data = json.load(f)
         df = pd.DataFrame(data)
-        st.dataframe(df, use_container_width=True, hide_index=True)
+        df["Val Loss"] = df["Val Loss"].astype(str)
+        st.dataframe(df, width="stretch", hide_index=True)
     else:
         st.warning(f"No benchmark file found at `{BENCHMARK_PATH}`. Run `python src/evaluation/evaluate_all.py` first.")
 
@@ -147,9 +148,9 @@ with tab_ablation:
             st.markdown("**Rank vs. Validation Loss**")
             st.line_chart(adf.set_index("rank")["val_loss"])
 
-        st.dataframe(adf, use_container_width=True, hide_index=True)
+        st.dataframe(adf, width="stretch", hide_index=True)
 
-        st.markdown("""
+        st.markdown(r"""
         > **Ablation Insight**: Trainable parameter count scales linearly with rank ($r$). However, because the adapter weight matrices ($\Delta W = B \cdot A$, where $B \in \mathbb{R}^{d \times r}$ and $A \in \mathbb{R}^{r \times k}$) account for under 2% of the frozen base parameter count, peak training VRAM remains largely dominated by base model activation memory and KV-caching. Task accuracy converges rapidly once $r \ge 8$.
         """)
     else:
