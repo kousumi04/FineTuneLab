@@ -1,0 +1,13 @@
+{
+    "experiment_name": "lora_r16",
+    "arm_type": "LoRA",
+    "lora_r": 16,
+    "trainable_params": 8798208,
+    "all_params": 502830976,
+    "trainable_percent": 1.7497,
+    "peak_vram_mb": 1704.44,
+    "training_time_seconds": 691.47,
+    "adapter_size_mb": 380.3,
+    "final_train_loss": 0.0857,
+    "val_loss": 0.0717
+}

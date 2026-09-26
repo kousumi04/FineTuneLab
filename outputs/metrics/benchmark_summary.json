@@ -1,0 +1,35 @@
+[
+  {
+    "Model Arm": "Base Model (Zero-Shot)",
+    "Trainable Params": "0 (0.0%)",
+    "Peak VRAM (MB)": 0.0,
+    "Training Time (s)": 0.0,
+    "Adapter Size (MB)": 0.0,
+    "Val Loss": "N/A",
+    "Task Accuracy (%)": 100.0,
+    "Code Validity Rate (%)": 100.0,
+    "Exact Match (%)": 0.0
+  },
+  {
+    "Model Arm": "Plain LoRA (r=16, FP16)",
+    "Trainable Params": "8,798,208 (1.75%)",
+    "Peak VRAM (MB)": 3820.5,
+    "Training Time (s)": 691.1,
+    "Adapter Size (MB)": 33.6,
+    "Val Loss": 0.0717,
+    "Task Accuracy (%)": 100.0,
+    "Code Validity Rate (%)": 100.0,
+    "Exact Match (%)": 0.67
+  },
+  {
+    "Model Arm": "QLoRA (r=16, 4-bit)",
+    "Trainable Params": "8,798,208 (1.75%)",
+    "Peak VRAM (MB)": 1448.1,
+    "Training Time (s)": 651.7,
+    "Adapter Size (MB)": 33.6,
+    "Val Loss": 0.0716,
+    "Task Accuracy (%)": 100.0,
+    "Code Validity Rate (%)": 100.0,
+    "Exact Match (%)": 0.67
+  }
+]

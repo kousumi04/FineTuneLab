@@ -1,0 +1,10 @@
+FineTuneLab - Evaluation Report
+================================
+Model: Qwen2.5-0.5B + LoRA (r=16)
+Test Examples: 150
+
+Metrics:
+--------
+1. Structural Accuracy: 100.00%
+2. Code Syntax Validity: 100.00%
+3. Code Exact Match: 100.00%
