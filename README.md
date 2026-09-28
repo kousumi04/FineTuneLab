@@ -45,6 +45,23 @@ FineTuneLab/
 
 ```
 
+## File Guide
+
+* `app.py` - Streamlit dashboard for model comparison, benchmark tables, and rank-ablation charts.
+* `src/data/generate_dataset.py` - Creates the synthetic Python error-diagnosis dataset.
+* `src/data/format_dataset.py` - Validates corrected code and splits the dataset into training, validation, and test JSONL files.
+* `src/training/train.py` - Runs a LoRA or QLoRA training experiment from a YAML configuration and records training metrics.
+* `src/training/run_ablation.py` - Runs the LoRA-rank ablation experiment and saves rank-level metrics.
+* `src/evaluation/evaluate.py` - Evaluates the base model and adapters for response structure, Python syntax validity, and exact matches.
+* `finish_eval.py` - Runs the final QLoRA evaluation and appends its results to the benchmark summary.
+* `src/models/peft_utils.py` - Loads the base model/tokenizer and applies LoRA adapter settings.
+* `src/models/push_to_hub.py` - Uploads the trained QLoRA adapter to Hugging Face Hub.
+* `src/utils/memory_tracker.py` - Tracks peak CUDA VRAM during training.
+* `configs/*.yaml` - Experiment settings for base, LoRA, and QLoRA runs.
+* `data/raw/` and `data/processed/` - Generated source data and train/validation/test splits.
+* `outputs/adapters/` and `outputs/metrics/` - Saved adapter checkpoints and experiment or evaluation results.
+* `src/notebooks/colab-train.ipynb` - Colab notebook for running training interactively.
+
 ## 🛠️ Installation & Setup
 
 **1. Clone the repository**
