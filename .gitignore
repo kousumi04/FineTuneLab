@@ -28,7 +28,7 @@ dist/
 experiments/*
 !experiments/.gitkeep
 checkpoints/
-outputs/
+outputs/*
 runs/
 wandb/
 tensorboard/
@@ -39,6 +39,18 @@ tensorboard/
 *.bin
 *.onnx
 *.log
+
+# Keep the final LoRA adapter available for deployment; ignore checkpoints.
+!outputs/
+!outputs/adapters/
+!outputs/adapters/lora_r16/
+outputs/adapters/lora_r16/checkpoint-*/
+!outputs/adapters/lora_r16/adapter_config.json
+!outputs/adapters/lora_r16/adapter_model.safetensors
+!outputs/adapters/lora_r16/chat_template.jinja
+!outputs/adapters/lora_r16/README.md
+!outputs/adapters/lora_r16/tokenizer.json
+!outputs/adapters/lora_r16/tokenizer_config.json
 
 # Jupyter and local tooling
 .ipynb_checkpoints/
