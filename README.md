@@ -1,4 +1,4 @@
-# 🔬 FineTuneLab: Quantifiable Parameter-Efficient Fine-Tuning
+# 🔬 LLM-FineTuning: Quantifiable Parameter-Efficient Fine-Tuning
 
 An end-to-end machine learning pipeline and interactive Streamlit dashboard designed to quantify the trade-offs between Zero-Shot inference, Plain LoRA (FP16), and QLoRA (4-bit) fine-tuning.
 
@@ -67,8 +67,8 @@ FineTuneLab/
 **1. Clone the repository**
 
 ```bash
-git clone https://github.com/kousumi04/FineTuneLab.git
-cd FineTuneLab
+git clone https://github.com/kousumi04/LLM-FineTuning.git
+cd LLM-FineTuning
 
 ```
 
